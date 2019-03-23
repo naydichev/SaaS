@@ -1,0 +1,25 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: A CloudFormation template to create a certificate.
+Parameters:
+  HostedZonePrefix:
+    Type: String
+    Description: The prefix to use for creating <prefix>.saas.slab.sytac.dev. Make sure no one else in the group is using this prefix.
+    AllowedPattern: '[a-z0-9\-]+'
+    MinLength: '1'
+    MaxLength: '20'
+
+Resources:
+  sLabCertificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Sub
+        - "${Prefix}.saas.slab.sytac.dev"
+        - { Prefix: !Ref HostedZonePrefix }
+      ValidationMethod: DNS
+
+Outputs:
+  CertificateArn:
+    Description: The ARN of the Certificate
+    Value: !Ref sLabCertificate
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", "CertificateArn" ] ]

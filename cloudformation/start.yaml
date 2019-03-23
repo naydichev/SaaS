@@ -4,16 +4,31 @@ Parameters:
   DatabaseName:
     Type: String
     Description: The name of the database you want to create.
+    MinLength: '1'
+    MaxLength: '64'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
   DatabaseMasterUser:
     Type: String
     Description: The master username for your database.
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters.
   DatabaseMasterPassword:
     Type: String
     NoEcho: true
     Description: The master password for your database.
+    MinLength: '1'
+    MaxLength: '41'
+    AllowedPattern: '[a-zA-Z0-9]+'
+    ConstraintDescription: must contain only alphanumeric characters.
   HostedZonePrefix:
     Type: String
     Description: The prefix to use for creating <prefix>.saas.slab.sytac.dev. Make sure no one else in the group is using this prefix.
+    AllowedPattern: '[a-z0-9\-]+'
+    MinLength: '1'
+    MaxLength: '20'
 
 Resources:
   sLabHostedZone:
