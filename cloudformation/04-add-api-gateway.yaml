@@ -1,0 +1,194 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: A beginning CloudFormation template to create a MySQL database and a Route53 HostedZone
+Parameters:
+  ArtifactKey:
+    Type: String
+    Description: The location of the Lambda function in S3 (minus the bucket).
+  DatabaseName:
+    Type: String
+    Description: The name of the database you want to create.
+    Default: devjamWorkshop
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    MaxLength: '64'
+    MinLength: '1'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters between 1 and 64 characters long.
+  DatabaseMasterUser:
+    Type: String
+    Description: The master username for your database.
+    Default: devjam
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters between 1 and 16 characters long.
+  DatabaseMasterPassword:
+    Type: String
+    NoEcho: true
+    Description: The master password for your database.
+    MinLength: '1'
+    MaxLength: '41'
+    AllowedPattern: '[a-zA-Z0-9]+'
+    ConstraintDescription: must contain only alphanumeric characters.
+  DomainName:
+    Type: String
+    Description: A domain name to use for this DevJam workshop.
+  LambdaHandler:
+    Type: String
+    Description: The handler for your Lambda function.
+  LambdaRuntime:
+    Type: String
+    Description: The runtime for your Lambda function.
+    AllowedValues:
+      - nodejs10.x
+      - nodejs8.10
+      - python3.6
+      - python3.7
+      - python2.7
+      - ruby2.5
+      - java8
+      - go1.x
+      - dotnetcore2.1
+      - dotnetcore1.0
+
+Conditions:
+  UseRoute53: !Not [ !Equals [ "", !Ref DomainName ] ]
+
+Resources:
+  HostedZone:
+    Condition: UseRoute53
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: !Ref DomainName
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "An all access pass to data"
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 3306
+          ToPort: 3306
+          IpProtocol: tcp
+
+  Database:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: "5"
+      DBInstanceClass: db.t2.micro
+      DBInstanceIdentifier: !Sub
+        - "${DBName}-devjam-db"
+        - { DBName: !Ref DatabaseName }
+      DBName: !Ref DatabaseName
+      Engine: MySQL
+      MasterUserPassword: !Ref DatabaseMasterPassword
+      MasterUsername: !Ref DatabaseMasterUser
+      MultiAZ: true
+      VPCSecurityGroups:
+        - !GetAtt [ DatabaseSecurityGroup, GroupId ]
+
+  DeploymentBucket:
+    Type: AWS::S3::Bucket
+
+  LambdaExecutionRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service:
+            - lambda.amazonaws.com
+          Action:
+          - sts:AssumeRole
+      Path: "/"
+      Policies:
+      - PolicyName: root
+        PolicyDocument:
+          Version: '2012-10-17'
+          Statement:
+          - Effect: Allow
+            Action:
+            - logs:*
+            Resource: arn:aws:logs:*:*:*
+
+  LambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Code:
+        S3Bucket: !Ref DeploymentBucket
+        S3Key: !Ref ArtifactKey
+      Handler: !Ref LambdaHandler
+      Runtime: !Ref LambdaRuntime
+      Role: !GetAtt LambdaExecutionRole.Arn
+      Timeout: 75
+      MemorySize: 512
+      Environment:
+        Variables:
+          DB_USER: !Ref DatabaseMasterUser
+          DB_PASS: !Ref DatabaseMasterPassword
+          JDBC_URL: !Sub "jdbc:mysql://${Database.Endpoint.Address}:3306/${DatabaseName}"
+
+  APIGateway:
+    Type: AWS::ApiGateway::RestApi
+    Properties:
+      Name: Seinfeld as a Service
+      Description: A service about nothing.
+
+  APIGatewayWildcardResource:
+    Type: AWS::ApiGateway::Resource
+    Properties:
+      RestApiId: !Ref APIGateway
+      ParentId: !GetAtt APIGateway.RootResourceId
+      PathPart: "{proxy+}"
+
+  APIGatewayRootMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        IntegrationHttpMethod: POST
+        Type: AWS_PROXY
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunction.Arn}/invocations"
+      ResourceId: !GetAtt APIGateway.RootResourceId
+      RestApiId: !Ref APIGateway
+
+  APIGatewayWildcardMethod:
+    Type: AWS::ApiGateway::Method
+    Properties:
+      AuthorizationType: NONE
+      HttpMethod: GET
+      Integration:
+        IntegrationHttpMethod: GET
+        Type: AWS_PROXY
+        Uri: !Sub "arn:aws:apigateway:${AWS::Region}:lambda:path/2015-03-31/functions/${LambdaFunction.Arn}/invocations"
+      ResourceId: !Ref APIGatewayWildcardResource
+      RestApiId: !Ref APIGateway
+
+  # NOTE: change the name of this resource everytime you want to deploy a change to API Gateway.
+  APIGatewayDeployment:
+    DependsOn:
+      - APIGatewayRootMethod
+      - APIGatewayWildcardMethod
+    Type: AWS::ApiGateway::Deployment
+    Properties:
+      RestApiId: !Ref APIGateway
+      StageName: kramer
+
+  LambdaAPIGatewayInvoke:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      FunctionName: !GetAtt LambdaFunction.Arn
+      Principal: apigateway.amazonaws.com
+      SourceArn: !Sub "arn:aws:execute-api:${AWS::Region}:${AWS::AccountId}:${APIGateway}/*/GET/"
+
+Outputs:
+  DatabaseUrl:
+    Description: The url of the database.
+    Value: !GetAtt Database.Endpoint.Address
+  DatabasePort:
+    Description: The port of the database.
+    Value: !GetAtt Database.Endpoint.Port
+  APIGatewayURL:
+    Description: The API Gateway URL.
+    Value: !Sub "https://${APIGateway}.execute-api.${AWS::Region}.amazonaws.com/kramer/"

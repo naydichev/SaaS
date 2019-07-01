@@ -1,0 +1,20 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: A CloudFormation template to create a certificate.
+Parameters:
+  DomainName:
+    Type: String
+    Description: A domain name to use for this DevJam workshop.
+
+Resources:
+  Certificate:
+    Type: AWS::CertificateManager::Certificate
+    Properties:
+      DomainName: !Ref DomainName
+      ValidationMethod: DNS
+
+Outputs:
+  CertificateArn:
+    Description: The ARN of the Certificate
+    Value: !Ref Certificate
+    Export:
+      Name: !Join [ ":", [ !Ref "AWS::StackName", "CertificateArn" ] ]

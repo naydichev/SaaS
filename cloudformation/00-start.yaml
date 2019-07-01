@@ -1,0 +1,72 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: A beginning CloudFormation template to create a MySQL database and a Route53 HostedZone
+Parameters:
+  DatabaseName:
+    Type: String
+    Description: The name of the database you want to create.
+    Default: devjamWorkshop
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    MaxLength: '64'
+    MinLength: '1'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters between 1 and 64 characters long.
+  DatabaseMasterUser:
+    Type: String
+    Description: The master username for your database.
+    Default: devjam
+    MinLength: '1'
+    MaxLength: '16'
+    AllowedPattern: '[a-zA-Z][a-zA-Z0-9]*'
+    ConstraintDescription: must begin with a letter and contain only alphanumeric characters between 1 and 16 characters long.
+  DatabaseMasterPassword:
+    Type: String
+    NoEcho: true
+    Description: The master password for your database.
+    MinLength: '1'
+    MaxLength: '41'
+    AllowedPattern: '[a-zA-Z0-9]+'
+    ConstraintDescription: must contain only alphanumeric characters.
+  DomainName:
+    Type: String
+    Description: A domain name to use for this DevJam workshop.
+
+Conditions:
+  UseRoute53: !Not [ !Equals [ "", !Ref DomainName ] ]
+
+Resources:
+  HostedZone:
+    Condition: UseRoute53
+    Type: AWS::Route53::HostedZone
+    Properties:
+      Name: !Ref DomainName
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupDescription: "An all access pass to data"
+      SecurityGroupIngress:
+        - CidrIp: 0.0.0.0/0
+          FromPort: 3306
+          ToPort: 3306
+          IpProtocol: tcp
+  Database:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      AllocatedStorage: "5"
+      DBInstanceClass: db.t2.micro
+      DBInstanceIdentifier: !Sub
+        - "${DBName}-devjam-db"
+        - { DBName: !Ref DatabaseName }
+      DBName: !Ref DatabaseName
+      Engine: MySQL
+      MasterUserPassword: !Ref DatabaseMasterPassword
+      MasterUsername: !Ref DatabaseMasterUser
+      MultiAZ: true
+      VPCSecurityGroups:
+        - !GetAtt [ DatabaseSecurityGroup, GroupId ]
+
+Outputs:
+  DatabaseUrl:
+    Description: The url of the database.
+    Value: !GetAtt Database.Endpoint.Address
+  DatabasePort:
+    Description: The port of the database.
+    Value: !GetAtt Database.Endpoint.Port
